@@ -20,5 +20,3 @@ __pycache__/
 *.tmp
 *~
 
-# Configuración de credenciales de EmailJS
-emailjs-config.js
