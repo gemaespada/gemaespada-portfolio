@@ -1,0 +1,9 @@
+/**
+ * Configuración de ejemplo de EmailJS para el portfolio de Gema Espada.
+ */
+window.EMAILJS_CONFIG = {
+  PUBLIC_KEY: "TU_PUBLIC_KEY",
+  SERVICE_ID: "TU_SERVICE_ID",
+  TEMPLATE_ID_CONTACT: "TU_TEMPLATE_ID_CONTACTO",
+  TEMPLATE_ID_AUTOREPLY: "TU_TEMPLATE_ID_RESPUESTA_AUTOMATICA"
+};

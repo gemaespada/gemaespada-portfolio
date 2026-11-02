@@ -38,3 +38,25 @@ El proyecto incluye el marcador `__SITE_URL__` en los metadatos canónicos, Open
 ## Idiomas y temas
 - El idioma base está en el HTML; los textos en inglés se configuran mediante claves `data-i18n` en `i18n.js`.
 - Las preferencias de idioma y tema (claro/oscuro) se memorizan en el navegador (`localStorage`).
+
+## Integración de EmailJS (Formulario de contacto)
+El formulario de contacto utiliza el SDK oficial de EmailJS para enviar los mensajes directamente al correo electrónico sin abrir clientes de correo externos.
+
+### Configuración requerida:
+1. Regístrate gratuitamente en [https://www.emailjs.com/](https://www.emailjs.com/).
+2. En el panel de EmailJS:
+   - **Email Services**: Añade tu proveedor (ej. Gmail/Outlook) y copia tu `SERVICE_ID`.
+   - **Email Templates**: Crea una plantilla con los parámetros:
+     - `{{from_name}}` y `{{from_email}}`: Datos del remitente.
+     - `{{subject}}`: Asunto del mensaje.
+     - `{{message}}`: Contenido del mensaje.
+     - `{{reply_to}}`: Asignar a `{{from_email}}` para responder directamente.
+   - **Account > API Keys**: Copia tu `Public Key`.
+3. Introduce estos identificadores en el archivo `emailjs-config.js`:
+   ```javascript
+   window.EMAILJS_CONFIG = {
+     PUBLIC_KEY: "tu_public_key_aqui",
+     SERVICE_ID: "tu_service_id_aqui",
+     TEMPLATE_ID: "tu_template_id_aqui"
+   };
+   ```

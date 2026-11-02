@@ -19,3 +19,6 @@ __pycache__/
 *.bak
 *.tmp
 *~
+
+# Configuración de credenciales de EmailJS
+emailjs-config.js

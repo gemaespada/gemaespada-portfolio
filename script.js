@@ -317,47 +317,97 @@ function initScrollReveal() {
 function initContactForm() {
   const form = document.getElementById('contact-form');
   const notification = document.getElementById('form-notification');
+  const submitBtn = document.getElementById('btn-submit-contact');
   if (!form || !notification) return;
 
   const mailLink = document.querySelector('a[href^="mailto:"]');
-  const recipient = mailLink ? mailLink.getAttribute('href').replace('mailto:', '') : '';
+  const recipient = mailLink ? mailLink.getAttribute('href').replace('mailto:', '') : 'gema.espada94@gmail.com';
   // Texto@dominio.tld: sin espacios, sin puntos consecutivos en el dominio y con extensión de 2+ letras
   const emailPattern = /^[^\s@]+@([^\s@.]+\.)+[^\s@.]{2,}$/;
+
+  // Inicializar SDK de EmailJS con la clave pública
+  const cfg = window.EMAILJS_CONFIG || {};
+  if (window.emailjs && cfg.PUBLIC_KEY) {
+    try {
+      window.emailjs.init({ publicKey: cfg.PUBLIC_KEY });
+    } catch (err) {
+      console.warn('EmailJS init warning:', err);
+    }
+  }
 
   // Cada validador devuelve la clave de traducción del error ('' si es válido)
   const fields = {
     name: (v) => (v ? '' : 'err.name'),
     email: (v) => (!v ? 'err.email.empty' : emailPattern.test(v) ? '' : 'err.email.invalid'),
+    subject: (v) => (v ? '' : 'err.subject'),
     message: (v) => (v ? '' : 'err.message')
   };
 
   const errorKeys = {};
   let lastNotice = null; // { key, vars, type }
+  let isSending = false;
+  let lastSendTimestamp = 0;
+  const RATE_LIMIT_MS = 6000; // 6 segundos entre envíos para prevenir spam
 
   function setError(name, key) {
     const input = form.elements[name];
     const out = document.getElementById(`error-${name}`);
     errorKeys[name] = key;
     if (out) out.textContent = key ? t(key) : '';
-    input.setAttribute('aria-invalid', key ? 'true' : 'false');
+    if (input) input.setAttribute('aria-invalid', key ? 'true' : 'false');
   }
 
   // Limpia el error de un campo al corregirlo
   Object.keys(fields).forEach((name) => {
-    form.elements[name].addEventListener('input', () => setError(name, ''));
+    const input = form.elements[name];
+    if (input) {
+      input.addEventListener('input', () => setError(name, ''));
+    }
   });
 
-  form.addEventListener('submit', (e) => {
+  function setSubmittingState(submitting) {
+    isSending = submitting;
+    if (submitBtn) {
+      submitBtn.disabled = submitting;
+      const span = submitBtn.querySelector('span');
+      if (span) {
+        if (submitting) {
+          submitBtn.classList.add('is-loading');
+          span.textContent = t('form.sending');
+        } else {
+          submitBtn.classList.remove('is-loading');
+          span.textContent = t('form.submit');
+        }
+      }
+    }
+    // Deshabilitar temporalmente los inputs durante el envío
+    ['name', 'email', 'subject', 'message'].forEach((name) => {
+      const field = form.elements[name];
+      if (field) field.disabled = submitting;
+    });
+  }
+
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (isSending) return;
+
     notification.className = 'form-notification';
+
+    // Protección anti-abuso: tasa de frecuencia (rate limit)
+    const now = Date.now();
+    if (now - lastSendTimestamp < RATE_LIMIT_MS) {
+      showNotification('form.rateLimit', 'error');
+      return;
+    }
 
     const values = {};
     let firstInvalid = null;
     Object.keys(fields).forEach((name) => {
-      values[name] = form.elements[name].value.trim();
+      const field = form.elements[name];
+      values[name] = field ? field.value.trim() : '';
       const error = fields[name](values[name]);
       setError(name, error);
-      if (error && !firstInvalid) firstInvalid = form.elements[name];
+      if (error && !firstInvalid && field) firstInvalid = field;
     });
 
     if (firstInvalid) {
@@ -366,16 +416,70 @@ function initContactForm() {
       return;
     }
 
-    if (!recipient) {
-      showNotification('form.noRecipient', 'error');
+    // Verificar que EmailJS está disponible y configurado
+    const hasConfig = window.emailjs && cfg.PUBLIC_KEY && cfg.SERVICE_ID && cfg.TEMPLATE_ID_CONTACT;
+    if (!hasConfig) {
+      showNotification('form.errorEmailJS', 'error', { email: recipient });
       return;
     }
 
-    const subject = t('form.subject', { name: values.name });
-    const body = `${values.message}\n\n—\n${values.name}\n${values.email}`;
-    window.location.href = `mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    setSubmittingState(true);
 
-    showNotification('form.success', 'success', { email: recipient });
+    try {
+      // 1. PRIMER ENVÍO: Notificación para Gema (template_6ephtod)
+      // Parámetros: name, email, subject, message (con alias habituales para compatibilidad)
+      const contactParams = {
+        name: values.name,
+        from_name: values.name,
+        email: values.email,
+        from_email: values.email,
+        reply_to: values.email,
+        subject: values.subject,
+        message: values.message,
+        to_email: recipient
+      };
+
+      await window.emailjs.send(cfg.SERVICE_ID, cfg.TEMPLATE_ID_CONTACT, contactParams, cfg.PUBLIC_KEY);
+
+      // Si el primer envío tuvo éxito, intentamos la respuesta automática al visitante
+      let autoReplyOk = true;
+      if (cfg.TEMPLATE_ID_AUTOREPLY) {
+        try {
+          // 2. SEGUNDO ENVÍO: Respuesta automática al visitante (template_63me2ww)
+          // Parámetros: from_name, from_email, name, email, to_email, subject, message
+          const autoReplyParams = {
+            from_name: values.name,
+            from_email: values.email,
+            name: values.name,
+            email: values.email,
+            to_email: values.email,
+            to_name: values.name,
+            subject: values.subject,
+            message: values.message
+          };
+          await window.emailjs.send(cfg.SERVICE_ID, cfg.TEMPLATE_ID_AUTOREPLY, autoReplyParams, cfg.PUBLIC_KEY);
+        } catch (autoErr) {
+          console.warn('Auto-reply warning:', autoErr);
+          autoReplyOk = false;
+        }
+      }
+
+      lastSendTimestamp = Date.now();
+      form.reset();
+      Object.keys(fields).forEach((name) => setError(name, ''));
+
+      if (autoReplyOk) {
+        showNotification('form.successEmailJS', 'success');
+      } else {
+        showNotification('form.successPartial', 'success');
+      }
+
+    } catch (err) {
+      console.error('EmailJS notification send error:', err);
+      showNotification('form.errorEmailJS', 'error', { email: recipient });
+    } finally {
+      setSubmittingState(false);
+    }
   });
 
   function showNotification(key, type, vars) {
@@ -393,14 +497,13 @@ function initContactForm() {
     if (lastNotice && notification.classList.contains(`is-${lastNotice.type}`)) {
       notification.textContent = t(lastNotice.key, lastNotice.vars);
     }
+    if (submitBtn && !isSending) {
+      const span = submitBtn.querySelector('span');
+      if (span) span.textContent = t('form.submit');
+    }
   });
 }
 
-/**
- * 5b. WhatsApp: el mensaje inicial del botón flotante cambia con el idioma y el
- * botón se aparta mientras el formulario está a la vista en pantallas pequeñas,
- * para no taparlo.
- */
 function updateWhatsAppLink() {
   const float = document.getElementById('wa-float');
   if (!float) return;
