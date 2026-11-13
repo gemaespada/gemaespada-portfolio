@@ -14,6 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initMobileMenu();
   initHeaderScroll();
   initActiveNavOnScroll();
+  initHeroAnimations();
+  initCertificationsGallery();
   initScrollReveal();
   initContactForm();
   initWhatsAppFloat();
@@ -204,22 +206,16 @@ function initMobileMenu() {
 }
 
 /**
- * 2. Efecto visual en la barra de navegación superior al desplazarse (scroll)
- * y barra de progreso de lectura.
+ * 2. Efecto visual en la barra de navegación superior al desplazarse (scroll).
  */
 function initHeaderScroll() {
   const header = document.getElementById('header');
-  const progress = document.getElementById('scroll-progress');
   if (!header) return;
 
   let ticking = false;
   const update = () => {
     ticking = false;
     header.classList.toggle('is-scrolled', window.scrollY > 30);
-    if (progress) {
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      progress.style.setProperty('--progress', max > 0 ? Math.min(window.scrollY / max, 1).toFixed(4) : 0);
-    }
   };
   const handleScroll = () => {
     if (!ticking) { ticking = true; window.requestAnimationFrame(update); }
@@ -249,7 +245,7 @@ function initActiveNavOnScroll() {
     entries.forEach((entry) => {
       if (entry.isIntersecting) {
         const id = entry.target.getAttribute('id');
-        
+
         navLinks.forEach((link) => {
           link.classList.remove('active');
           if (link.getAttribute('href') === `#${id}`) {
@@ -269,10 +265,671 @@ function initActiveNavOnScroll() {
 /**
  * 4. Animaciones suaves de aparición de tarjetas y contenidos al hacer scroll
  */
+/**
+ * 3b. Animaciones editoriales de entrada y scroll para la portada (Hero) con GSAP
+ */
+function initHeroAnimations() {
+  if (!window.gsap) return;
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduceMotion) return;
+
+  if (window.ScrollTrigger) {
+    window.gsap.registerPlugin(window.ScrollTrigger);
+  }
+
+  const tl = window.gsap.timeline({
+    defaults: { ease: 'power3.out', duration: 0.85 }
+  });
+
+  tl.from('.hero-kicker-line', {
+    scaleX: 0,
+    duration: 0.65,
+    clearProps: 'transform'
+  })
+    .from('.hero-role', {
+      y: 12,
+      opacity: 0,
+      duration: 0.6,
+      clearProps: 'all'
+    }, '-=0.45')
+    .from('.hero-name-first, .hero-name-last', {
+      y: 32,
+      opacity: 0,
+      stagger: 0.12,
+      duration: 0.85,
+      clearProps: 'all'
+    }, '-=0.4')
+    .from('.hero-quote', {
+      y: 18,
+      opacity: 0,
+      duration: 0.7,
+      clearProps: 'all'
+    }, '-=0.55')
+    .from('.hero-bio', {
+      y: 16,
+      opacity: 0,
+      duration: 0.7,
+      clearProps: 'all'
+    }, '-=0.55')
+    .from('.hero-actions .btn', {
+      y: 14,
+      opacity: 0,
+      stagger: 0.1,
+      duration: 0.6,
+      clearProps: 'all'
+    }, '-=0.5')
+    .from('.hero-portrait', {
+      y: 26,
+      opacity: 0,
+      scale: 0.98,
+      duration: 0.95,
+      clearProps: 'all'
+    }, 0.18)
+    .from('.portrait-img', {
+      scale: 1.06,
+      duration: 1.25,
+      ease: 'power2.out',
+      clearProps: 'transform'
+    }, 0.18);
+
+  // Transición discreta al hacer scroll
+  if (window.ScrollTrigger) {
+    window.gsap.to('.portrait-frame', {
+      yPercent: -4,
+      ease: 'none',
+      scrollTrigger: {
+        trigger: '.hero-section',
+        start: 'top top',
+        end: 'bottom top',
+        scrub: 0.6
+      }
+    });
+  }
+}
+
+/**
+ * 3c. Línea temporal vertical animada de módulos del máster y visor Liquid Glass (PDF.js + Canvas)
+ */
+function initCertificationsGallery() {
+  const masterTimeline = document.getElementById('master-timeline');
+  const timelineRail = document.getElementById('timeline-rail');
+  const timelineRailFill = document.getElementById('timeline-rail-fill');
+  const timeline = document.getElementById('modules-timeline');
+  const modal = document.getElementById('cert-modal');
+  const data = Array.isArray(window.CERTIFICATIONS_DATA) ? window.CERTIFICATIONS_DATA : [];
+  if (!timeline || !data.length) return;
+
+  const modalTitle = document.getElementById('cert-modal-title');
+  const modalViewport = document.getElementById('cert-modal-viewport');
+  const modalCanvasWrap = document.getElementById('cert-modal-canvas-wrap');
+  const modalCanvas = document.getElementById('cert-modal-canvas');
+  const zoomOutBtn = document.getElementById('cert-zoom-out');
+  const zoomInBtn = document.getElementById('cert-zoom-in');
+  const zoomResetBtn = document.getElementById('cert-zoom-reset');
+  const modalCloseBtn = document.getElementById('cert-modal-close');
+
+  if (window.pdfjsLib && window.pdfjsLib.GlobalWorkerOptions) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  }
+
+  let activeCert = null;
+  let lastTriggerEl = null;
+  let zoomScale = 1;
+  let baseWidthPx = 780;
+  let renderToken = 0;
+
+  const ZOOM_MIN = 0.75;
+  const ZOOM_MAX = 2.25;
+  const ZOOM_STEP = 0.25;
+
+  const getTitle = (item) => {
+    if (item.title && typeof item.title === 'object') {
+      return item.title[langState.current] || item.title.es || '';
+    }
+    return String(item.title || '');
+  };
+
+  // Mapa plano de todos los certificados (incluidos los hijos de Python) para búsqueda rápida
+  const certById = new Map();
+  data.forEach((item) => {
+    certById.set(item.id, item);
+    if (Array.isArray(item.children)) {
+      item.children.forEach((child) => certById.set(child.id, child));
+    }
+  });
+
+  function createCertButton(certItem, isSub = false) {
+    const titleText = getTitle(certItem);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `timeline-btn${isSub ? ' timeline-btn--sub' : ''}`;
+    btn.dataset.certId = certItem.id;
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-label', t('cert.consultAria', { title: titleText }));
+    btn.innerHTML = `
+      <span class="timeline-btn-text">${t('cert.consult')}</span>
+      <span class="timeline-btn-arrow" aria-hidden="true">↗</span>
+    `;
+    btn.addEventListener('click', () => openCertModal(certItem, btn));
+    return btn;
+  }
+
+  // Construcción de los 7 nodos principales y la ramificación secundaria de Python
+  const fragment = document.createDocumentFragment();
+  data.forEach((item) => {
+    const li = document.createElement('li');
+    const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+    const hasCert = Boolean(item.hasCertificate && item.fileUrl);
+    li.className = `timeline-item${hasChildren ? ' timeline-item--branch' : ''}`;
+    li.dataset.moduleId = item.id;
+
+    // 1. Nodo circular integrado en la línea vertical
+    const node = document.createElement('div');
+    node.className = 'timeline-node';
+    node.setAttribute('aria-hidden', 'true');
+    node.innerHTML = '<span class="timeline-node-core"></span>';
+
+    // 2. Cuerpo del módulo
+    const body = document.createElement('div');
+    body.className = 'timeline-body';
+
+    const header = document.createElement('div');
+    header.className = 'timeline-header';
+
+    const identity = document.createElement('div');
+    identity.className = 'timeline-identity';
+
+    if (Array.isArray(item.icons) && item.icons.length) {
+      const logosWrap = document.createElement('div');
+      logosWrap.className = 'timeline-logos';
+      logosWrap.setAttribute('aria-hidden', 'true');
+      item.icons.forEach((iconHref) => {
+        const badge = document.createElement('span');
+        badge.className = 'timeline-logo';
+        badge.innerHTML = `<svg><use href="${iconHref}"></use></svg>`;
+        logosWrap.appendChild(badge);
+      });
+      identity.appendChild(logosWrap);
+    }
+
+    const titleEl = document.createElement('h4');
+    titleEl.className = 'timeline-title';
+    titleEl.textContent = getTitle(item);
+    identity.appendChild(titleEl);
+    header.appendChild(identity);
+
+    if (hasCert) {
+      header.appendChild(createCertButton(item, false));
+    }
+
+    body.appendChild(header);
+
+    // 3. Ramificación secundaria (Python -> 4 certificados)
+    if (hasChildren) {
+      const branchList = document.createElement('ul');
+      branchList.className = 'timeline-branch';
+      item.children.forEach((child) => {
+        const subLi = document.createElement('li');
+        subLi.className = 'timeline-branch-item';
+        subLi.dataset.certId = child.id;
+
+        const subIdentity = document.createElement('div');
+        subIdentity.className = 'timeline-subidentity';
+
+        const subNode = document.createElement('span');
+        subNode.className = 'timeline-subnode';
+        subNode.setAttribute('aria-hidden', 'true');
+
+        const subTitle = document.createElement('span');
+        subTitle.className = 'timeline-subtitle';
+        subTitle.textContent = getTitle(child);
+
+        subIdentity.appendChild(subNode);
+        subIdentity.appendChild(subTitle);
+        subLi.appendChild(subIdentity);
+
+        if (child.hasCertificate && child.fileUrl) {
+          subLi.appendChild(createCertButton(child, true));
+        }
+
+        branchList.appendChild(subLi);
+      });
+      body.appendChild(branchList);
+    }
+
+    li.appendChild(node);
+    li.appendChild(body);
+    fragment.appendChild(li);
+  });
+
+  timeline.innerHTML = '';
+  timeline.appendChild(fragment);
+
+  // Geometría exacta y dibujo real de la línea vertical según el avance del scroll
+  const timelineItems = Array.from(timeline.querySelectorAll('.timeline-item'));
+  const branchContainer = timeline.querySelector('.timeline-branch');
+  const branchItems = Array.from(timeline.querySelectorAll('.timeline-branch-item'));
+
+  function layoutAndSyncTimelineScroll() {
+    if (!masterTimeline || !timelineRail || !timelineRailFill || !timelineItems.length) return;
+
+    const containerRect = masterTimeline.getBoundingClientRect();
+    const firstNode = timelineItems[0].querySelector('.timeline-node');
+    const lastNode = timelineItems[timelineItems.length - 1].querySelector('.timeline-node');
+    if (!firstNode || !lastNode) return;
+
+    const firstRect = firstNode.getBoundingClientRect();
+    const lastRect = lastNode.getBoundingClientRect();
+
+    const startOffset = (firstRect.top - containerRect.top) + (firstRect.height / 2);
+    const endOffset = (lastRect.top - containerRect.top) + (lastRect.height / 2);
+    const totalLength = Math.max(1, endOffset - startOffset);
+
+    timelineRail.style.top = `${Math.round(startOffset)}px`;
+    timelineRail.style.height = `${Math.round(totalLength)}px`;
+
+    // Punto de lectura del viewport (68% de la altura de la ventana)
+    const triggerViewportY = window.innerHeight * 0.68;
+    const distanceScrolled = triggerViewportY - firstRect.top - (firstRect.height / 2);
+    const progress = Math.max(0, Math.min(1, distanceScrolled / totalLength));
+
+    timelineRailFill.style.setProperty('--rail-progress', progress.toFixed(4));
+
+    // Iluminar cada nodo principal cuando el trazo de la línea lo alcanza
+    const drawnY = startOffset + (totalLength * progress);
+    timelineItems.forEach((itemEl) => {
+      const nodeEl = itemEl.querySelector('.timeline-node');
+      if (!nodeEl) return;
+      const nRect = nodeEl.getBoundingClientRect();
+      const nodeCenterOffset = (nRect.top - containerRect.top) + (nRect.height / 2);
+      itemEl.classList.toggle('is-reached', drawnY >= nodeCenterOffset - 6);
+    });
+
+    // Progreso de la ramificación secundaria de Python e iluminación de sus subnodos
+    if (branchContainer && branchItems.length) {
+      const bRect = branchContainer.getBoundingClientRect();
+      const lastSubRect = branchItems[branchItems.length - 1].getBoundingClientRect();
+      const branchLineHeight = Math.max(1, (lastSubRect.top - bRect.top) + (lastSubRect.height / 2));
+      branchContainer.style.setProperty('--branch-line-height', `${Math.round(branchLineHeight)}px`);
+
+      const bDist = triggerViewportY - bRect.top;
+      const bProgress = Math.max(0, Math.min(1, bDist / branchLineHeight));
+      branchContainer.style.setProperty('--branch-progress', bProgress.toFixed(4));
+
+      branchItems.forEach((subEl) => {
+        const sRect = subEl.getBoundingClientRect();
+        const sCenter = sRect.top + (sRect.height / 2);
+        subEl.classList.toggle('is-reached', triggerViewportY >= sCenter);
+      });
+    }
+  }
+
+  let scrollTicking = false;
+  const onTimelineScrollOrResize = () => {
+    if (!scrollTicking) {
+      scrollTicking = true;
+      window.requestAnimationFrame(() => {
+        scrollTicking = false;
+        layoutAndSyncTimelineScroll();
+      });
+    }
+  };
+
+  window.addEventListener('scroll', onTimelineScrollOrResize, { passive: true });
+  window.addEventListener('resize', onTimelineScrollOrResize, { passive: true });
+  layoutAndSyncTimelineScroll();
+
+  // Microinteracciones de entrada suave para los nodos, logotipos y ramificación
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (window.gsap && !reduceMotion) {
+    if (window.ScrollTrigger) {
+      window.gsap.registerPlugin(window.ScrollTrigger);
+    }
+
+    // Entrada escalonada de cada nodo y su tarjeta
+    window.gsap.from('#modules-timeline .timeline-item', {
+      y: 16,
+      opacity: 0,
+      duration: 0.48,
+      stagger: 0.06,
+      ease: 'power2.out',
+      clearProps: 'all',
+      onComplete: layoutAndSyncTimelineScroll,
+      scrollTrigger: window.ScrollTrigger ? {
+        trigger: '#master-timeline',
+        start: 'top 86%',
+        once: true
+      } : undefined
+    });
+
+    // Aparición suave de los logotipos oficiales junto a cada nodo
+    window.gsap.from('#modules-timeline .timeline-logo', {
+      scale: 0.82,
+      opacity: 0,
+      duration: 0.4,
+      stagger: 0.05,
+      ease: 'back.out(1.5)',
+      clearProps: 'all',
+      scrollTrigger: window.ScrollTrigger ? {
+        trigger: '#master-timeline',
+        start: 'top 86%',
+        once: true
+      } : undefined
+    });
+
+    // Aparición escalonada de la ramificación secundaria de Python
+    if (branchItems.length) {
+      window.gsap.from('#modules-timeline .timeline-branch-item', {
+        x: -10,
+        opacity: 0,
+        duration: 0.38,
+        stagger: 0.06,
+        ease: 'power2.out',
+        clearProps: 'all',
+        scrollTrigger: window.ScrollTrigger ? {
+          trigger: '#modules-timeline .timeline-branch',
+          start: 'top 88%',
+          once: true
+        } : undefined
+      });
+    }
+
+    // Entrada escalonada de las tecnologías y elementos subordinados dentro de cada bloque de Conocimientos
+    document.querySelectorAll('#conocimientos .skill-group').forEach((group) => {
+      const items = group.querySelectorAll('.tech-item, .tech-subitem, .tech-ledger-row');
+      if (!items.length) return;
+      window.gsap.from(items, {
+        y: 10,
+        opacity: 0,
+        duration: 0.42,
+        stagger: 0.04,
+        ease: 'power2.out',
+        clearProps: 'all',
+        scrollTrigger: window.ScrollTrigger ? {
+          trigger: group,
+          start: 'top 86%',
+          once: true
+        } : undefined
+      });
+    });
+  }
+
+  function computeBaseWidth() {
+    if (!modalViewport) return 760;
+    const style = window.getComputedStyle(modalViewport);
+    const padX = (parseFloat(style.paddingLeft) || 24) + (parseFloat(style.paddingRight) || 24);
+    const availW = Math.max(260, modalViewport.clientWidth - padX);
+    return Math.min(820, availW);
+  }
+
+  function applyZoomUI() {
+    if (zoomResetBtn) {
+      zoomResetBtn.textContent = `${Math.round(zoomScale * 100)}%`;
+    }
+    if (zoomOutBtn) {
+      zoomOutBtn.disabled = zoomScale <= ZOOM_MIN + 0.001;
+    }
+    if (zoomInBtn) {
+      zoomInBtn.disabled = zoomScale >= ZOOM_MAX - 0.001;
+    }
+    if (modalCanvasWrap) {
+      const targetWidth = Math.round(baseWidthPx * zoomScale);
+      modalCanvasWrap.style.width = `${targetWidth}px`;
+    }
+  }
+
+  function setZoom(nextScale) {
+    zoomScale = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(nextScale * 100) / 100));
+    applyZoomUI();
+  }
+
+  function drawPreviewOnCanvas(previewUrl, token) {
+    return new Promise((resolve, reject) => {
+      if (!previewUrl || !modalCanvas) {
+        reject(new Error('No preview available'));
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        if (token !== renderToken) {
+          resolve();
+          return;
+        }
+        const ctx = modalCanvas.getContext('2d');
+        modalCanvas.width = img.naturalWidth || 2049;
+        modalCanvas.height = img.naturalHeight || 1447;
+        ctx.clearRect(0, 0, modalCanvas.width, modalCanvas.height);
+        ctx.drawImage(img, 0, 0, modalCanvas.width, modalCanvas.height);
+        modalCanvas.dataset.renderedCert = activeCert ? activeCert.id : '';
+        modalCanvas.dataset.renderEngine = 'canvas-image';
+        resolve();
+      };
+      img.onerror = (err) => reject(err);
+      img.src = previewUrl;
+    });
+  }
+
+  async function renderCertToCanvas(cert, token) {
+    if (!modalCanvas || !cert) return;
+    if (modalViewport) modalViewport.classList.add('is-loading');
+
+    try {
+      // Intentar primero renderizado vectorial directo del PDF mediante PDF.js en <canvas>
+      if (window.pdfjsLib && typeof window.pdfjsLib.getDocument === 'function' && cert.fileUrl) {
+        try {
+          const loadingTask = window.pdfjsLib.getDocument(cert.fileUrl);
+          const pdfDoc = await loadingTask.promise;
+          if (token !== renderToken) return;
+          const page = await pdfDoc.getPage(1);
+          if (token !== renderToken) return;
+
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const unscaledViewport = page.getViewport({ scale: 1 });
+          const desiredPixelWidth = Math.max(1200, Math.round(baseWidthPx * 1.8 * dpr));
+          const scale = desiredPixelWidth / unscaledViewport.width;
+          const viewport = page.getViewport({ scale });
+
+          const ctx = modalCanvas.getContext('2d');
+          modalCanvas.width = Math.floor(viewport.width);
+          modalCanvas.height = Math.floor(viewport.height);
+          ctx.clearRect(0, 0, modalCanvas.width, modalCanvas.height);
+
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          if (token !== renderToken) return;
+          modalCanvas.dataset.renderedCert = cert.id;
+          modalCanvas.dataset.renderEngine = 'pdfjs-canvas';
+          return;
+        } catch (err) {
+          // Si PDF.js falla por cualquier motivo de red/worker, dibujar el stream original en el mismo <canvas>
+        }
+      }
+
+      await drawPreviewOnCanvas(cert.previewImage, token);
+    } finally {
+      if (token === renderToken && modalViewport) {
+        modalViewport.classList.remove('is-loading');
+      }
+    }
+  }
+
+  function syncModalTexts(cert) {
+    if (!cert || !modal) return;
+    const titleText = getTitle(cert);
+
+    if (modalTitle) modalTitle.textContent = titleText;
+    if (modalCanvas) {
+      modalCanvas.setAttribute('aria-label', t('cert.canvasAria', { title: titleText }));
+    }
+  }
+
+  let isClosingModal = false;
+  let closeTimer = null;
+
+  function openCertModal(cert, triggerEl) {
+    if (!modal || !cert) return;
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+    isClosingModal = false;
+    activeCert = cert;
+    lastTriggerEl = triggerEl || document.activeElement;
+    renderToken += 1;
+    const currentToken = renderToken;
+
+    syncModalTexts(cert);
+
+    modal.classList.remove('is-closing');
+    document.body.classList.add('is-modal-open');
+    if (typeof modal.showModal === 'function') {
+      if (!modal.open) modal.showModal();
+    } else {
+      modal.setAttribute('open', '');
+    }
+
+    baseWidthPx = computeBaseWidth();
+    zoomScale = 1;
+    applyZoomUI();
+
+    // Activación progresiva del cristal translúcido Liquid Glass en el siguiente frame
+    window.requestAnimationFrame(() => {
+      modal.classList.add('is-open');
+    });
+
+    renderCertToCanvas(cert, currentToken);
+
+    if (modalCloseBtn) {
+      modalCloseBtn.focus();
+    }
+  }
+
+  function closeCertModal() {
+    if (!modal || !modal.open || isClosingModal) return;
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReduced) {
+      modal.classList.remove('is-open', 'is-closing');
+      modal.close();
+      return;
+    }
+
+    isClosingModal = true;
+    modal.classList.remove('is-open');
+    modal.classList.add('is-closing');
+    closeTimer = window.setTimeout(() => {
+      closeTimer = null;
+      isClosingModal = false;
+      modal.classList.remove('is-closing');
+      if (modal.open) modal.close();
+    }, 180);
+  }
+
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener('click', () => setZoom(zoomScale - ZOOM_STEP));
+  }
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener('click', () => setZoom(zoomScale + ZOOM_STEP));
+  }
+  if (zoomResetBtn) {
+    zoomResetBtn.addEventListener('click', () => setZoom(1));
+  }
+
+  window.addEventListener('resize', () => {
+    if (modal && modal.open) {
+      baseWidthPx = computeBaseWidth();
+      applyZoomUI();
+    }
+  }, { passive: true });
+
+  if (modal) {
+    if (modalCloseBtn) modalCloseBtn.addEventListener('click', closeCertModal);
+
+    // Interceptar el cierre con ESC para ejecutar también la transición suave de salida
+    modal.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      closeCertModal();
+    });
+
+    // Cerrar al hacer clic fuera de la superficie Liquid Glass
+    modal.addEventListener('click', (e) => {
+      const shell = document.getElementById('cert-modal-shell');
+      if (shell && !shell.contains(e.target)) {
+        closeCertModal();
+      }
+    });
+
+    // Atajos de teclado discretos para zoom y cierre suave mientras el modal está abierto
+    modal.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeCertModal();
+      } else if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        setZoom(zoomScale + ZOOM_STEP);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setZoom(zoomScale - ZOOM_STEP);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        setZoom(1);
+      }
+    });
+
+    modal.addEventListener('close', () => {
+      modal.classList.remove('is-open', 'is-closing');
+      document.body.classList.remove('is-modal-open');
+      renderToken += 1;
+      activeCert = null;
+      if (lastTriggerEl && typeof lastTriggerEl.focus === 'function') {
+        lastTriggerEl.focus();
+      }
+    });
+  }
+
+  // Actualización reactiva al cambiar entre ES y EN
+  onLanguageChange(() => {
+    timelineItems.forEach((itemEl) => {
+      const item = certById.get(itemEl.dataset.moduleId);
+      if (!item) return;
+      const titleText = getTitle(item);
+      const titleEl = itemEl.querySelector('.timeline-title');
+      if (titleEl) titleEl.textContent = titleText;
+
+      const mainBtn = itemEl.querySelector(':scope > .timeline-body > .timeline-header .timeline-btn');
+      if (mainBtn) {
+        const btnText = mainBtn.querySelector('.timeline-btn-text');
+        if (btnText) btnText.textContent = t('cert.consult');
+        mainBtn.setAttribute('aria-label', t('cert.consultAria', { title: titleText }));
+      }
+    });
+
+    branchItems.forEach((subEl) => {
+      const child = certById.get(subEl.dataset.certId);
+      if (!child) return;
+      const childTitle = getTitle(child);
+      const subTitleEl = subEl.querySelector('.timeline-subtitle');
+      if (subTitleEl) subTitleEl.textContent = childTitle;
+
+      const subBtn = subEl.querySelector('.timeline-btn');
+      if (subBtn) {
+        const btnText = subBtn.querySelector('.timeline-btn-text');
+        if (btnText) btnText.textContent = t('cert.consult');
+        subBtn.setAttribute('aria-label', t('cert.consultAria', { title: childTitle }));
+      }
+    });
+
+    if (activeCert && modal && modal.open) {
+      syncModalTexts(activeCert);
+    }
+
+    layoutAndSyncTimelineScroll();
+  });
+}
+
 function initScrollReveal() {
   // Elementos a los que aplicamos la animación de entrada suave
   const elementsToReveal = document.querySelectorAll(
-    '.section-header, .about-intro, .trait, .idea-panel, .edu-item, .module, .skills-legend, .skill-cat-head, .skill-card, .cert-extra-title, .cert-item, .contact-channels, .contact-form-card'
+    '.section-header, .about-intro, .trait, .idea-panel, .edu-entry, .edu-modules-head, .skill-group, .contact-channels, .contact-form-card'
   );
 
   const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
