@@ -126,7 +126,7 @@ function updateThemeLabel() {
  */
 function syncFavicon(theme) {
   const isDark = theme ? theme === 'dark' : currentTheme() === 'dark';
-  const targetSvg = isDark ? '/favicon-dark.svg' : '/favicon-light.svg';
+  const targetSvg = isDark ? '/favicon-dark.svg?v=20261116c' : '/favicon-light.svg?v=20261116c';
   const svgFavicon = document.getElementById('favicon-svg') || document.querySelector('link[type="image/svg+xml"]');
   if (svgFavicon) {
     // Si ya tiene el href correcto, no tocar
